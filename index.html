@@ -19,9 +19,10 @@
 
         <!-- Gesture cheat-sheet -->
         <div class="instructions">
-            ✋ <b>Move Hand:</b> Rotate 3D Model<br>
+            ✌️ <b>Move Hand:</b> Rotate 3D Model<br>
             🖐 <b>Open Hand:</b> Explode Particles<br>
-            ✊ <b>Closed Fist:</b> Black Hole (Attract)
+            ✊ <b>Closed Fist:</b> Black Hole (Attract)<br>
+            👐👐 <b>Both Hands Open:</b> Next Model
         </div>
 
         <!-- Webcam preview with hand-skeleton overlay -->
@@ -34,13 +35,14 @@
         <div class="gesture-status" id="status-text">Ready...</div>
 
         <!-- Shape + colour controls -->
+        <!-- Buttons start as ??? — JS reveals the active one via updateButtonLabels() -->
         <div class="glass-panel">
-            <button onclick="setShape('sphere')">Sphere</button>
-            <button onclick="setShape('heart')">Heart</button>
-            <button onclick="setShape('galaxy')">Galaxy</button>
-            <button onclick="setShape('saturn')">Saturn</button>
-            <button onclick="setShape('nailong')">Nailong</button>
-            <button onclick="setShape('birthday')">HBD AULL!!</button>
+            <button onclick="selectShape('sphere')"  data-shape="sphere"  >???</button>
+            <button onclick="selectShape('heart')"   data-shape="heart"   >???</button>
+            <button onclick="selectShape('galaxy')"  data-shape="galaxy"  >???</button>
+            <button onclick="selectShape('saturn')"  data-shape="saturn"  >???</button>
+            <button onclick="selectShape('nailong')" data-shape="nailong" >???</button>
+            <button onclick="selectShape('birthday')" data-shape="birthday">???</button>
             <input type="color" id="baseColor" value="#00d2ff"
                    style="height:40px; border:none; border-radius:5px; cursor:pointer;">
         </div>
