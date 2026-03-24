@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Elite WebGL particle system controlled by hand gestures using MediaPipe and Three.js">
+    <title>Elite WebGL Gesture Particles</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- ── Start screen overlay ────────────────────────────────────── -->
+    <div id="start-overlay">
+        <button id="start-btn">START EXPERIENCE</button>
+    </div>
+
+    <!-- ── HUD / UI layer ──────────────────────────────────────────── -->
+    <div id="ui-layer">
+
+        <!-- Gesture cheat-sheet -->
+        <div class="instructions">
+            🖐 <b>Open Hand:</b> Explode Particles<br>
+            ✊ <b>Closed Fist:</b> Black Hole (Attract)<br>
+            🤌 <b>Pinch:</b> Change Color Palette<br>
+            ☝️ <b>Point:</b> Particle Follow<br>
+            ✌️ <b>Two Fingers:</b> Change Shape
+        </div>
+
+        <!-- Webcam preview with hand-skeleton overlay -->
+        <div id="video-container">
+            <video id="input-video" playsinline></video>
+            <canvas id="output-canvas"></canvas>
+        </div>
+
+        <!-- Active gesture label -->
+        <div class="gesture-status" id="status-text">Ready...</div>
+
+        <!-- Shape + colour controls -->
+        <div class="glass-panel">
+            <button onclick="setShape('sphere')">Sphere</button>
+            <button onclick="setShape('heart')">Heart</button>
+            <button onclick="setShape('galaxy')">Galaxy</button>
+            <button onclick="setShape('torus')">Torus</button>
+            <button onclick="setShape('saturn')">Saturn</button>
+            <button onclick="setShape('nailong')">Nailong</button>
+            <button onclick="setShape('birthday')">HBD</button>
+            <input type="color" id="baseColor" value="#00d2ff"
+                   style="height:40px; border:none; border-radius:5px; cursor:pointer;">
+        </div>
+
+    </div><!-- /#ui-layer -->
+
+    <!-- ── Third-party libraries ────────────────────────────────────── -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+    <!-- ── App ──────────────────────────────────────────────────────── -->
+    <script src="main.js"></script>
+
+</body>
+</html>
