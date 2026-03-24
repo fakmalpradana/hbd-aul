@@ -4,20 +4,18 @@
    =========================== */
 
 // ── GLSL Shaders ──────────────────────────────────────────────────────────────
+// Rotation is handled in JS via particles.rotation, so the shader only
+// handles morphing, explode, and black-hole effects.
 
 const VERTEX_SHADER = /* glsl */ `
-    uniform float uTime;
     uniform float uMorph;
     uniform float uFist;
     uniform float uExplode;
-    uniform vec3  uPointer;
-    uniform float uPointerActive;
 
     attribute vec3 targetPos;
     attribute vec3 color;
 
-    varying vec3  vColor;
-    varying float vAlpha;
+    varying vec3 vColor;
 
     void main() {
         vColor = color;
@@ -25,32 +23,18 @@ const VERTEX_SHADER = /* glsl */ `
         // Morph between current and target shape
         vec3 pos = mix(position, targetPos, uMorph);
 
-        // Continuous Y-axis rotation
-        float angle = uTime * 0.2;
-        float s = sin(angle);
-        float c = cos(angle);
-        pos.xz *= mat2(c, -s, s, c);
-
-        // Gesture: Explode (Open Hand)
+        // Gesture: Explode (Open Hand) — push outward along normal
         if (uExplode > 0.1) {
             pos += normalize(pos) * uExplode * 5.0;
         }
 
-        // Gesture: Black Hole (Fist)
+        // Gesture: Black Hole (Fist) — pull toward origin
         if (uFist > 0.1) {
             pos = mix(pos, vec3(0.0), uFist * 0.95);
         }
 
-        // Gesture: Pointer Follow (Index finger)
-        if (uPointerActive > 0.5) {
-            float d = distance(pos, uPointer);
-            if (d < 5.0) {
-                pos = mix(pos, uPointer, (1.0 - d / 5.0) * 0.2);
-            }
-        }
-
         vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-        gl_PointSize = 15.0 / -mvPosition.z;
+        gl_PointSize = 22.0 / -mvPosition.z;   // larger than before
         gl_Position  = projectionMatrix * mvPosition;
     }
 `;
@@ -68,25 +52,28 @@ const FRAGMENT_SHADER = /* glsl */ `
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const COUNT = 25000;
+const COUNT = 80000; // up from 25k — denser, more spectacular
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let scene, camera, renderer, particles, geometry;
-let colors       = new Float32Array(COUNT * 3);
-let morphValue   = { val: 0 };
-let pointerPos   = new THREE.Vector3();
-let pointerActive = 0;
-let fistStrength  = 0;
+let colors          = new Float32Array(COUNT * 3);
+let morphValue      = { val: 0 };
+let fistStrength    = 0;
 let explodeStrength = 0;
+
+// Rotation state — managed in JS, applied via particles.rotation
+let prevPalmX    = null;
+let prevPalmY    = null;
+let handRotating = false; // true when hand is driving rotation
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
-const videoElement = document.getElementById('input-video');
+const videoElement  = document.getElementById('input-video');
 const canvasElement = document.getElementById('output-canvas');
-const canvasCtx    = canvasElement.getContext('2d');
-const statusText   = document.getElementById('status-text');
-const colorPicker  = document.getElementById('baseColor');
+const canvasCtx     = canvasElement.getContext('2d');
+const statusText    = document.getElementById('status-text');
+const colorPicker   = document.getElementById('baseColor');
 
 // ── Shape generators ──────────────────────────────────────────────────────────
 
@@ -106,9 +93,9 @@ function generateSphere() {
 function generateHeart() {
     const arr = new Float32Array(COUNT * 3);
     for (let i = 0; i < COUNT; i++) {
-        const t = Math.random() * Math.PI * 2;
-        const x = 16 * Math.pow(Math.sin(t), 3);
-        const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+        const t     = Math.random() * Math.PI * 2;
+        const x     = 16 * Math.pow(Math.sin(t), 3);
+        const y     = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
         const depth = (Math.random() - 0.5) * 5;
         arr[i * 3]     = x * 0.3;
         arr[i * 3 + 1] = y * 0.3;
@@ -147,7 +134,6 @@ function generateSaturn() {
     const bodyCut = COUNT * 0.6;
     for (let i = 0; i < COUNT; i++) {
         if (i < bodyCut) {
-            // Sphere core
             const r     = 3;
             const theta = Math.acos(1 - 2 * (i / bodyCut));
             const phi   = Math.sqrt(bodyCut * Math.PI) * theta;
@@ -155,7 +141,6 @@ function generateSaturn() {
             arr[i * 3 + 1] = r * Math.sin(theta) * Math.sin(phi);
             arr[i * 3 + 2] = r * Math.cos(theta);
         } else {
-            // Ring
             const r = 5 + Math.random() * 3;
             const a = Math.random() * Math.PI * 2;
             arr[i * 3]     = r * Math.cos(a);
@@ -171,7 +156,6 @@ function generateNailong() {
     for (let i = 0; i < COUNT; i++) {
         let x, y, z;
         if (i < COUNT * 0.7) {
-            // Body
             const t = Math.acos(1 - 2 * Math.random());
             const p = Math.random() * Math.PI * 2;
             const r = 3 + Math.sin(t * 2);
@@ -179,7 +163,6 @@ function generateNailong() {
             y = r * Math.cos(t) * 1.5 - 1.0;
             z = r * Math.sin(t) * Math.sin(p);
         } else {
-            // Head
             const t = Math.acos(1 - 2 * Math.random());
             const p = Math.random() * Math.PI * 2;
             x = Math.sin(t) * Math.cos(p) * 2;
@@ -218,7 +201,6 @@ function setShape(type) {
 
     const newPoints = (generators[type] ?? generateSphere)();
 
-    // Swap: current target → position, new target → targetPos
     geometry.attributes.position.array.set(geometry.attributes.targetPos.array);
     geometry.attributes.position.needsUpdate = true;
     geometry.attributes.targetPos.array.set(newPoints);
@@ -228,7 +210,6 @@ function setShape(type) {
     gsap.to(morphValue, { val: 1, duration: 1.5, ease: 'power2.inOut' });
 }
 
-// Make setShape available to inline onclick handlers
 window.setShape = setShape;
 
 // ── Three.js init ─────────────────────────────────────────────────────────────
@@ -247,9 +228,7 @@ function init() {
     const initialPos = generateSphere();
     const targetPos  = new Float32Array(COUNT * 3);
 
-    for (let i = 0; i < COUNT * 3; i++) {
-        colors[i] = Math.random();
-    }
+    for (let i = 0; i < COUNT * 3; i++) colors[i] = Math.random();
 
     geometry.setAttribute('position',  new THREE.BufferAttribute(initialPos, 3));
     geometry.setAttribute('targetPos', new THREE.BufferAttribute(targetPos, 3));
@@ -257,12 +236,9 @@ function init() {
 
     const material = new THREE.ShaderMaterial({
         uniforms: {
-            uTime:         { value: 0 },
-            uMorph:        { value: 0 },
-            uFist:         { value: 0 },
-            uExplode:      { value: 0 },
-            uPointer:      { value: new THREE.Vector3() },
-            uPointerActive:{ value: 0 },
+            uMorph:   { value: 0 },
+            uFist:    { value: 0 },
+            uExplode: { value: 0 },
         },
         vertexShader:   VERTEX_SHADER,
         fragmentShader: FRAGMENT_SHADER,
@@ -287,13 +263,17 @@ function onWindowResize() {
 
 function animate() {
     requestAnimationFrame(animate);
+
+    // Slow auto-rotation when the user is not driving it with their hand
+    if (!handRotating) {
+        particles.rotation.y += 0.003;
+    }
+
     const u = particles.material.uniforms;
-    u.uTime.value          += 0.01;
-    u.uMorph.value          = morphValue.val;
-    u.uFist.value           = fistStrength;
-    u.uExplode.value        = explodeStrength;
-    u.uPointer.value.copy(pointerPos);
-    u.uPointerActive.value  = pointerActive;
+    u.uMorph.value   = morphValue.val;
+    u.uFist.value    = fistStrength;
+    u.uExplode.value = explodeStrength;
+
     renderer.render(scene, camera);
 }
 
@@ -304,8 +284,8 @@ const hands = new Hands({
 });
 
 hands.setOptions({
-    maxNumHands:           1,
-    modelComplexity:       1,
+    maxNumHands:            1,
+    modelComplexity:        1,
     minDetectionConfidence: 0.5,
     minTrackingConfidence:  0.5,
 });
@@ -323,13 +303,10 @@ hands.onResults((results) => {
 
         const indexTip = landmarks[8];
         const thumbTip = landmarks[4];
+        // landmarks[9] = middle-finger MCP — a stable palm-center reference point
+        const palmCenter = landmarks[9];
 
-        // Map index-finger tip to 3-D world space
-        pointerPos.x = (0.5 - indexTip.x) * 30;
-        pointerPos.y = (0.5 - indexTip.y) * 20;
-        pointerPos.z = 0;
-
-        // Pinch → randomise colour
+        // ── Pinch: randomise colour ───────────────────────────────────────
         const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
         if (pinchDist < 0.05 && geometry) {
             statusText.innerText = 'Pinch: Randomizing Color';
@@ -341,37 +318,56 @@ hands.onResults((results) => {
             geometry.attributes.color.needsUpdate = true;
         }
 
-        // Extended-finger counts (excludes thumb)
-        const isIndexUp  = indexTip.y         < landmarks[6].y;
-        const isMiddleUp = landmarks[12].y    < landmarks[10].y;
-        const isRingUp   = landmarks[16].y    < landmarks[14].y;
-        const isPinkyUp  = landmarks[20].y    < landmarks[18].y;
+        // ── Count extended fingers (index, middle, ring, pinky) ───────────
+        const isIndexUp  = indexTip.y      < landmarks[6].y;
+        const isMiddleUp = landmarks[12].y < landmarks[10].y;
+        const isRingUp   = landmarks[16].y < landmarks[14].y;
+        const isPinkyUp  = landmarks[20].y < landmarks[18].y;
         const upCount    = [isIndexUp, isMiddleUp, isRingUp, isPinkyUp].filter(Boolean).length;
 
         if (upCount === 0) {
-            // Fist
-            statusText.innerText = 'Fist: Attracting';
+            // ── Fist → Black Hole ─────────────────────────────────────────
+            statusText.innerText = 'Fist: Black Hole';
             fistStrength    = Math.min(fistStrength + 0.05, 1.0);
             explodeStrength = 0;
+            handRotating    = false;
+            prevPalmX = null; prevPalmY = null;
+
         } else if (upCount >= 4) {
-            // Open hand
-            statusText.innerText = 'Open Hand: Repelling';
+            // ── Open Hand → Explode ───────────────────────────────────────
+            statusText.innerText = 'Open Hand: Exploding';
             explodeStrength = Math.min(explodeStrength + 0.1, 2.0);
             fistStrength    = 0;
+            handRotating    = false;
+            prevPalmX = null; prevPalmY = null;
+
         } else {
-            statusText.innerText = isIndexUp ? 'Pointing: Follow Me' : 'Gesture Active';
+            // ── 1–3 fingers or neutral → 3D Rotation ─────────────────────
+            statusText.innerText = 'Move Hand: Rotating';
             fistStrength    *= 0.8;
             explodeStrength *= 0.8;
-            pointerActive    = isIndexUp ? 1 : 0;
+            handRotating     = true;
 
-            if (upCount === 2) setShape('heart');
-            if (upCount === 3) setShape('galaxy');
+            if (prevPalmX !== null && particles) {
+                const dx = palmCenter.x - prevPalmX;
+                const dy = palmCenter.y - prevPalmY;
+                // Horizontal hand movement → Y-axis rotation
+                // Vertical  hand movement → X-axis rotation
+                particles.rotation.y -= dx * 8;
+                particles.rotation.x -= dy * 5;
+            }
+            prevPalmX = palmCenter.x;
+            prevPalmY = palmCenter.y;
         }
+
     } else {
+        // ── No hand detected — decay effects, resume auto-rotate ──────────
         statusText.innerText = 'No hand detected';
-        fistStrength    *= 0.8;
-        explodeStrength *= 0.8;
-        pointerActive    = 0;
+        fistStrength    *= 0.9;
+        explodeStrength *= 0.9;
+        handRotating     = false;
+        prevPalmX = null;
+        prevPalmY = null;
     }
 
     canvasCtx.restore();
@@ -382,20 +378,14 @@ hands.onResults((results) => {
 document.getElementById('start-btn').addEventListener('click', async () => {
     document.getElementById('start-overlay').style.display = 'none';
 
-    // Bug fix 1: Set canvas dimensions explicitly to match the video feed.
-    // Without this the canvas defaults to 300x150, causing MediaPipe's
-    // drawImage / clearRect to work on the wrong internal buffer size,
-    // which silently prevents onResults from firing reliably.
+    // Set canvas dimensions to match video feed (required by MediaPipe)
     canvasElement.width  = 640;
     canvasElement.height = 480;
 
-    // Bug fix 2: Initialise Three.js BEFORE starting the camera.
-    // mpCamera.start() begins pushing frames to hands.send() immediately;
-    // if onResults fires before init() assigns `geometry`, accessing
-    // geometry.attributes throws a TypeError that can break the callback.
+    // Init Three.js BEFORE starting camera to ensure geometry exists when
+    // the first onResults callback arrives
     init();
 
-    // MediaPipe Camera utility — separate from the Three.js `camera` variable.
     const mpCamera = new Camera(videoElement, {
         onFrame: async () => { await hands.send({ image: videoElement }); },
         width:  640,
@@ -405,6 +395,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 });
 
 colorPicker.addEventListener('input', (e) => {
+    if (!geometry) return;
     const color = new THREE.Color(e.target.value);
     const attr  = geometry.attributes.color.array;
     for (let i = 0; i < COUNT * 3; i += 3) {
