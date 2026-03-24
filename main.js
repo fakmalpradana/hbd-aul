@@ -331,7 +331,7 @@ hands.onResults((results) => {
 
         // Pinch → randomise colour
         const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-        if (pinchDist < 0.05) {
+        if (pinchDist < 0.05 && geometry) {
             statusText.innerText = 'Pinch: Randomizing Color';
             const [r, g, b] = [Math.random(), Math.random(), Math.random()];
             const attr = geometry.attributes.color.array;
@@ -382,15 +382,26 @@ hands.onResults((results) => {
 document.getElementById('start-btn').addEventListener('click', async () => {
     document.getElementById('start-overlay').style.display = 'none';
 
-    // NOTE: variable named `camera` here shadows the Three.js camera intentionally —
-    // MediaPipe Camera is a separate API object.
+    // Bug fix 1: Set canvas dimensions explicitly to match the video feed.
+    // Without this the canvas defaults to 300x150, causing MediaPipe's
+    // drawImage / clearRect to work on the wrong internal buffer size,
+    // which silently prevents onResults from firing reliably.
+    canvasElement.width  = 640;
+    canvasElement.height = 480;
+
+    // Bug fix 2: Initialise Three.js BEFORE starting the camera.
+    // mpCamera.start() begins pushing frames to hands.send() immediately;
+    // if onResults fires before init() assigns `geometry`, accessing
+    // geometry.attributes throws a TypeError that can break the callback.
+    init();
+
+    // MediaPipe Camera utility — separate from the Three.js `camera` variable.
     const mpCamera = new Camera(videoElement, {
         onFrame: async () => { await hands.send({ image: videoElement }); },
         width:  640,
         height: 480,
     });
     mpCamera.start();
-    init();
 });
 
 colorPicker.addEventListener('input', (e) => {
